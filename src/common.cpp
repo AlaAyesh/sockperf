@@ -179,6 +179,23 @@ int set_affinity_list(os_thread_t thread, const char * cpu_list)
 }
 
 //------------------------------------------------------------------------------
+#ifdef  USING_VMA_EXTRA_API
+int search_rings_fds(int num, rings_fds* rings_fd_list)
+{
+  struct rings_fds *temp;
+
+  temp = rings_fd_list;
+  while(temp != NULL){
+	if(temp->fd == num)
+		return 1; //Found
+      
+	temp = temp->next;
+  }
+  return 0; // Not found
+  
+}
+#endif
+//------------------------------------------------------------------------------
 void hexdump(void *ptr, int buflen)
 {
     unsigned char *buf = (unsigned char*)ptr;
@@ -212,7 +229,8 @@ const char* handler2str( fd_block_handler_t type )
 #ifndef WIN32
 		,
 		"poll",
-		"epoll"
+		"epoll",
+		"vmapoll"
 #endif
 	};
 

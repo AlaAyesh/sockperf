@@ -32,6 +32,8 @@
 #include "IoHandlers.h"
 #include "PacketTimes.h"
 #include "Switches.h"
+#include "Message.h"
+#include "common.h"
 
 TicksTime s_startTime, s_endTime;
 
@@ -466,6 +468,9 @@ int Client<IoType, SwitchDataIntegrity, SwitchActivityInfo, SwitchCycleDuration,
 ::initBeforeLoop()
 {
 	int rc = SOCKPERF_ERR_NONE;
+	bool first_ring = false;
+        int found_ring = 0;
+	int poll = 0;
 
 	if (g_b_exit) return rc;
 
@@ -489,37 +494,94 @@ int Client<IoType, SwitchDataIntegrity, SwitchActivityInfo, SwitchCycleDuration,
 			else {
 				log_dbg ("[fd=%d] Binding to: %s:%d...", ifd, inet_ntoa(p_client_bind_addr->sin_addr), ntohs(p_client_bind_addr->sin_port));
 			}
-
+#ifdef  USING_VMA_EXTRA_API
+			if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+				if (os_set_nonblocking_socket(ifd)){
+					log_err("failed setting socket as nonblocking\n");
+					rc = SOCKPERF_ERR_SOCKET;
+					break;
+				}
+			}
+#endif
 			if (g_fds_array[ifd]->sock_type == SOCK_STREAM) {
 				log_dbg ("[fd=%d] Connecting to: %s:%d...", ifd, inet_ntoa(g_fds_array[ifd]->server_addr.sin_addr), ntohs(g_fds_array[ifd]->server_addr.sin_port));
+
 				if (connect(ifd, (struct sockaddr*)&(g_fds_array[ifd]->server_addr), sizeof(struct sockaddr)) < 0) {
 					if (os_err_in_progress()) {
+#ifdef  USING_VMA_EXTRA_API
+						if (g_pApp->m_const_params.is_vmapoll && g_vma_api) {
+							if (!g_ring_fd){
+								first_ring = true;
+								g_rings_fds_list = (struct rings_fds *) malloc(sizeof(rings_fds));
+								if (!g_rings_fds_list) {
+									log_err("Failed to allocate memory with malloc()");
+									FREE(g_rings_fds_list);
+									return SOCKPERF_ERR_NO_MEMORY;
+								}
+								g_rings_fds_list->next = NULL;
+							}
+							g_vma_api->get_socket_rings_fds(ifd, &g_ring_fd,1);
+							assert((-1) != g_ring_fd);
+
+							if (first_ring) {
+								g_rings_fds_list->fd = g_ring_fd;
+								first_ring = false;
+							}
+							else{
+								found_ring = search_rings_fds(g_ring_fd, g_rings_fds_list);
+								if (!found_ring){
+									rings_fds *temp = NULL;
+									temp = (struct rings_fds *) malloc(sizeof(rings_fds));
+									if (!temp) {
+										log_err("Failed to allocate memory with malloc()");
+										FREE(temp);
+										return SOCKPERF_ERR_NO_MEMORY;
+									}
+									temp->fd = g_ring_fd;
+									temp->next = NULL;
+									g_rings_fds_list->next = temp;
+								}
+							}
+							while (poll == 0) {
+								struct vma_completion_t vma_comps;
+								poll = g_vma_api->vma_poll(g_ring_fd, &vma_comps, 1, 0);
+								if (poll > 0) {
+									if (vma_comps.events & EPOLLOUT) {
+										ifd = vma_comps.user_data;
+									}
+								}
+							}
+						}
+#else
+						
 						fd_set rfds, wfds;
 						struct timeval tv;
 						tv.tv_sec = 0; tv.tv_usec = 500;
-
+							
 						FD_ZERO(&rfds);
 						FD_ZERO(&wfds);
-
+					    
 						int max_fd = -1;
-
+						
 						FD_SET(ifd, &wfds);
 						FD_SET(ifd, &rfds);
 						if(ifd > max_fd) max_fd = ifd;
-
+						
 						select(max_fd + 1, &rfds, &wfds, NULL, &tv);
 						if(FD_ISSET(ifd, &wfds) || FD_ISSET(ifd, &rfds)) {
 							socklen_t err_len;
 							int error;
-
+							
 							err_len = sizeof(error);
 							if (getsockopt(ifd, SOL_SOCKET, SO_ERROR, &error, &err_len) < 0 || error != 0) {
 								log_err("Can`t connect socket");
 								rc = SOCKPERF_ERR_SOCKET;
 								break;
-						    }
+							}
 						}
+#endif
 					}
+
 					else {
 						log_err("Can`t connect socket");
 						rc = SOCKPERF_ERR_SOCKET;
@@ -760,6 +822,13 @@ void client_handler(handler_info *p_info)
 			case EPOLL:
 			{
 				client_handler<IoEpoll> (p_info->fd_min, p_info->fd_max, p_info->fd_num);
+				break;
+			}
+#endif
+#ifdef  USING_VMA_EXTRA_API
+			case VMAPOLL:
+			{
+				client_handler<IoVmaPoll> (p_info->fd_min, p_info->fd_max, p_info->fd_num);
 				break;
 			}
 #endif

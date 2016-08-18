@@ -29,6 +29,8 @@
 #ifndef IOHANDLERS_H_
 #define IOHANDLERS_H_
 #include "common.h"
+#include "Message.h"
+#include "Defs.h"
 
 //==============================================================================
 class IoHandler {
@@ -373,6 +375,68 @@ private:
 	int m_max_events;
 };
 #endif
-#endif
 
+#ifdef  USING_VMA_EXTRA_API
+//==============================================================================
+class IoVmaPoll: public IoHandler {
+public:
+	IoVmaPoll(int _fd_min, int _fd_max, int _fd_num);
+	virtual ~IoVmaPoll();
+
+	//------------------------------------------------------------------------------
+	inline void update() {}
+	//------------------------------------------------------------------------------
+	inline int waitArrival(){
+		if (g_pApp->m_const_params.is_vmapoll && g_vma_api) {
+			if (g_vma_poll_buff && g_vma_poll_buff->next) {
+				g_vma_poll_buff = g_vma_poll_buff->next;
+				m_look_end = m_look_start + 1;
+				return 1;
+			}
+			else if (g_vma_poll_buff && !g_vma_poll_buff->next) {
+				g_vma_api->free_vma_packets(&g_vma_comps.packet, 1);
+			}
+			
+			m_look_end = 0;
+			g_vma_buf_offset = 0;
+			g_vma_poll_buff = NULL;
+			while(!m_look_end && !g_b_exit) {
+				uint32_t event = 0;
+				rings_fds *current = g_rings_fds_list;
+				while (current != NULL){
+					g_ring_fd = current->fd;
+					m_look_end = g_vma_api->vma_poll(g_ring_fd, &g_vma_comps, 1, 0);
+					if (m_look_end > 0){
+						event = (uint32_t)g_vma_comps.events;
+						if (g_vma_comps.events & VMA_POLL_NEW_CONNECTION_ACCEPTED) {
+							os_set_nonblocking_socket(g_vma_comps.user_data);
+							m_look_end = 0;
+						}
+						else if (g_vma_comps.events & VMA_POLL_PACKET) {
+							event |= EPOLLIN;
+							g_vma_poll_buff = g_vma_comps.packet.buff_lst;
+							g_vma_buf_offset = 0;
+							break;
+						} else {
+						  m_look_end = 0;
+						}
+					}
+					current = current->next;
+				}
+			}
+		}
+		m_look_end = m_look_start + 1;
+		return 1;
+	}
+	//------------------------------------------------------------------------------
+	inline int analyzeArrival(int ifd) const {
+		assert( (ifd < MAX_FDS_NUM)  &&
+				"exceeded tool limitation (MAX_FDS_NUM)");
+		return ifd;
+	}
+
+	virtual int prepareNetwork();
+};
+#endif
+#endif
 #endif /* IOHANDLERS_H_ */

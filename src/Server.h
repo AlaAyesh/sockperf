@@ -130,7 +130,14 @@ void close_ifd(int fd,int ifd,fds_data* l_fds_ifd){
 		g_pkt_index = 0;
 		g_pkt_offset = 0;
 	}
-
+	if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+		if (g_vma_poll_buff){
+			g_vma_api->free_vma_packets(&g_vma_comps.packet, 1);
+			g_vma_poll_buff = NULL;
+			g_vma_buf_offset = 0;
+		}
+		close(g_vma_comps.user_data);
+	}
 	if (g_vma_api) {
 		g_vma_api->register_recv_callback(fd, NULL, NULL);
 	}
@@ -168,11 +175,27 @@ inline bool Server<IoType, SwitchActivityInfo, SwitchCalcGaps>::server_receive_t
 	fds_data* l_fds_ifd = g_fds_array[ifd];
 	if (!l_fds_ifd)
 		return (do_update);
+#ifdef  USING_VMA_EXTRA_API
+	if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+		if (g_vma_poll_buff){
+			if (l_fds_ifd->recv.cur_offset) {
+				l_fds_ifd->recv.cur_addr = l_fds_ifd->recv.buf;
+				memcpy(l_fds_ifd->recv.cur_addr + l_fds_ifd->recv.cur_offset,(uint8_t*)g_vma_poll_buff->payload, g_vma_poll_buff->len);
+				recvfrom_addr = g_vma_comps.src;
+			}
+			else {
+				l_fds_ifd->recv.cur_addr = (uint8_t*)g_vma_poll_buff->payload;
+				recvfrom_addr = g_vma_comps.src;
+			}
+			ret = g_vma_poll_buff->len;
+		}
+	}
+#else
 	ret = msg_recvfrom(ifd,
-			           l_fds_ifd->recv.cur_addr + l_fds_ifd->recv.cur_offset,
-			           l_fds_ifd->recv.cur_size,
-			           &recvfrom_addr);
-
+			   l_fds_ifd->recv.cur_addr + l_fds_ifd->recv.cur_offset,
+			   l_fds_ifd->recv.cur_size,
+			   &recvfrom_addr);
+#endif
 	if (ret == RET_SOCKET_SHUTDOWN) {
 		if (l_fds_ifd->sock_type == SOCK_STREAM) {
 			close_ifd( l_fds_ifd->next_fd,ifd,l_fds_ifd);
@@ -195,6 +218,13 @@ inline bool Server<IoType, SwitchActivityInfo, SwitchCalcGaps>::server_receive_t
 			if (l_fds_ifd->recv.cur_size < MsgHeader::EFFECTIVE_SIZE) {
 				l_fds_ifd->recv.cur_size = MsgHeader::EFFECTIVE_SIZE - l_fds_ifd->recv.cur_offset;
 			}
+#ifdef  USING_VMA_EXTRA_API
+			if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+				if (g_vma_poll_buff) {
+					memcpy(l_fds_ifd->recv.buf,l_fds_ifd->recv.cur_addr, l_fds_ifd->recv.cur_offset);
+				}
+			}
+#endif
 			return (!do_update);
 		} else if (l_fds_ifd->recv.cur_offset < MsgHeader::EFFECTIVE_SIZE) {
 		  /* 2: message header is got, match message to cycle buffer */
@@ -225,6 +255,13 @@ inline bool Server<IoType, SwitchActivityInfo, SwitchCalcGaps>::server_receive_t
 			if (l_fds_ifd->recv.cur_size < (int)m_pMsgReply->getMaxSize()) {
 				l_fds_ifd->recv.cur_size = m_pMsgReply->getLength() - l_fds_ifd->recv.cur_offset;
 			}
+#ifdef  USING_VMA_EXTRA_API
+			if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+				if (g_vma_poll_buff) {
+					memcpy(l_fds_ifd->recv.buf,l_fds_ifd->recv.cur_addr, l_fds_ifd->recv.cur_offset);
+				}
+			}
+#endif
 			return (!do_update);
 		}
 
@@ -293,7 +330,13 @@ inline bool Server<IoType, SwitchActivityInfo, SwitchCalcGaps>::server_receive_t
 			}
 			int length = m_pMsgReply->getLength();
 			m_pMsgReply->setHeaderToNetwork();
+#ifdef  USING_VMA_EXTRA_API
+			if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+				ret = msg_sendto(g_vma_comps.user_data, m_pMsgReply->getBuf(), length, &sendto_addr);
+			}
+#else
 			ret = msg_sendto(ifd, m_pMsgReply->getBuf(), length, &sendto_addr);
+#endif
 			if (ret == RET_SOCKET_SHUTDOWN) {
 				if (l_fds_ifd->sock_type == SOCK_STREAM) {
 					close_ifd( l_fds_ifd->next_fd,ifd,l_fds_ifd);

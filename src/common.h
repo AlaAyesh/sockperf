@@ -43,6 +43,9 @@ void exit_with_err(const char* error, int status);
 void print_log_dbg(struct in_addr sin_addr,in_port_t sin_port, int ifd);
 
 int set_affinity_list(os_thread_t thread, const char * cpu_list);
+#ifdef  USING_VMA_EXTRA_API
+int search_rings_fds(int num, rings_fds* rings_fd_list);
+#endif
 void hexdump(void *ptr, int buflen);
 const char* handler2str( fd_block_handler_t type );
 int read_int_from_sys_file(const char *path);

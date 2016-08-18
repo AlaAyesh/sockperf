@@ -259,6 +259,12 @@ static const AOPT_DESC  common_opt_desc[] =
 		OPT_VMAZCOPYREAD, AOPT_NOARG, aopt_set_literal( 0 ), aopt_set_string( "vmazcopyread" ),
 		"If possible use VMA's zero copy reads API (See VMA's readme)."
 	},
+#ifdef  USING_VMA_EXTRA_API
+	{
+		OPT_VMAPOLL, AOPT_NOARG, aopt_set_literal( 0 ), aopt_set_string( "vmapoll" ),
+                "If possible use VMA's Poll API (See VMA's readme)."
+        },
+#endif
 	{
 		OPT_DAEMONIZE, AOPT_NOARG, aopt_set_literal( 0 ), aopt_set_string( "daemonize" ),
 		"Run as daemon."
@@ -1957,6 +1963,12 @@ static int parse_common_opt( const AOPT_OBJECT *common_obj )
 		if ( !rc && aopt_check(common_obj, OPT_VMAZCOPYREAD) ) {
 			s_user_params.is_vmazcopyread = true;
 		}
+#ifdef  USING_VMA_EXTRA_API
+		if ( !rc && aopt_check(common_obj, OPT_VMAPOLL) ) {
+			s_user_params.is_vmapoll = true;
+			s_user_params.fd_handler_type = VMAPOLL;
+		}
+#endif
 
 		if ( !rc && aopt_check(common_obj, OPT_DAEMONIZE) ) {
 			*p_daemonize = true;
@@ -2256,6 +2268,7 @@ void set_defaults()
 	s_user_params.pre_warmup_wait = 0;
 	s_user_params.is_vmarxfiltercb = false;
 	s_user_params.is_vmazcopyread = false;
+	s_user_params.is_vmapoll = false;
 	g_debug_level = LOG_LVL_INFO;
 	s_user_params.mc_loop_disable = true;
 	s_user_params.client_work_with_srv_num = DEFAULT_CLIENT_WORK_WITH_SRV_NUM;
@@ -3104,7 +3117,7 @@ int bringup(const int *p_daemonize)
 	/* Setup VMA */
 	int _vma_pkts_desc_size = 0;
 	if ( !rc &&
-			(s_user_params.is_vmarxfiltercb || s_user_params.is_vmazcopyread)) {
+			(s_user_params.is_vmarxfiltercb || s_user_params.is_vmazcopyread || s_user_params.is_vmapoll)) {
 #ifdef  USING_VMA_EXTRA_API
 		// Get VMA extended API
 		g_vma_api = vma_get_api();
@@ -3113,7 +3126,7 @@ int bringup(const int *p_daemonize)
 		else
 			log_msg("VMA Extra API found - using VMA's receive zero copy and messages filter APIs");
 
-		_vma_pkts_desc_size = sizeof(struct vma_packets_t) + sizeof(struct vma_packet_t) + sizeof(struct iovec) * 16;
+		_vma_pkts_desc_size = sizeof(struct vma_completion_t) * 4;
 #else
 		log_msg("This version is not compiled with VMA extra API");
 #endif
@@ -3360,6 +3373,7 @@ do_warmup = %d \n\t\
 pre_warmup_wait = %d \n\t\
 is_vmarxfiltercb = %d \n\t\
 is_vmazcopyread = %d \n\t\
+is_vmapoll = %d \n\t\
 mc_loop_disable = %d \n\t\
 mc_ttl = %d \n\t\
 tcp_nodelay = %d \n\t\
@@ -3398,6 +3412,7 @@ s_user_params.do_warmup,
 s_user_params.pre_warmup_wait,
 s_user_params.is_vmarxfiltercb,
 s_user_params.is_vmazcopyread,
+s_user_params.is_vmapoll,
 s_user_params.mc_loop_disable,
 s_user_params.mc_ttl,
 s_user_params.tcp_nodelay,

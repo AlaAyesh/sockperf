@@ -61,6 +61,8 @@ ServerBase::~ServerBase()
 int ServerBase::initBeforeLoop()
 {
 	int rc = SOCKPERF_ERR_NONE;
+	bool first_ring = false;
+	int found_ring = 0;
 
 	rc = set_affinity_list(os_getthread(), g_pApp->m_const_params.threads_affinity);
 
@@ -104,6 +106,42 @@ int ServerBase::initBeforeLoop()
 				rc = SOCKPERF_ERR_SOCKET;
 				break;
 			}
+#ifdef  USING_VMA_EXTRA_API
+			if (g_pApp->m_const_params.is_vmapoll && g_vma_api) {
+				if (!g_ring_fd){
+					first_ring = true;
+					g_rings_fds_list = (struct rings_fds *) malloc(sizeof(rings_fds));
+					if (!g_rings_fds_list) {
+						log_err("Failed to allocate memory with malloc()");
+						FREE(g_rings_fds_list);
+						return SOCKPERF_ERR_NO_MEMORY;
+					}
+					g_rings_fds_list->next = NULL;
+				}
+				g_vma_api->get_socket_rings_fds(ifd, &g_ring_fd,1);
+				assert((-1) != g_ring_fd);
+				
+				if (first_ring) {
+					g_rings_fds_list->fd = g_ring_fd;
+					first_ring = false;
+				}
+				else{
+					found_ring = search_rings_fds(g_ring_fd, g_rings_fds_list);
+					if (!found_ring){
+						rings_fds *temp = NULL;
+						temp = (struct rings_fds *) malloc(sizeof(rings_fds));
+						if (!temp) {
+							log_err("Failed to allocate memory with malloc()");
+							FREE(temp);
+							return SOCKPERF_ERR_NO_MEMORY;
+						}
+						temp->fd = g_ring_fd;
+						temp->next = NULL;
+						g_rings_fds_list->next = temp;
+					}
+				}
+			}
+#endif
 		}
 	}
 
@@ -178,15 +216,13 @@ void Server<IoType, SwitchActivityInfo, SwitchCalcGaps>::doLoop()
 				log_msg("Error: %s() returned without fd ready", handler2str(g_pApp->m_const_params.fd_handler_type));
 			continue;
 		}
-
 		// handle arrival and response
 		int accept_fd = (int)INVALID_SOCKET; // TODO: use SOCKET all over the way and avoid this cast
 		bool do_update = false;
 		for (int ifd = m_ioHandler.get_look_start(); (numReady) && (ifd < m_ioHandler.get_look_end()); ifd++) {
 			actual_fd = m_ioHandler.analyzeArrival(ifd);
-
 			if (actual_fd){
-				assert( g_fds_array[actual_fd] &&
+				assert(g_fds_array[actual_fd] &&
 						"invalid fd");
 
 				if (!g_fds_array[actual_fd])
@@ -196,7 +232,13 @@ void Server<IoType, SwitchActivityInfo, SwitchCalcGaps>::doLoop()
 				}
 				else
 				{
+#ifdef  USING_VMA_EXTRA_API
+					if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+						accept_fd = actual_fd;
+					}
+#else
 					accept_fd = server_accept(actual_fd);
+#endif
 					if (accept_fd == actual_fd) {
 						int m_recived = g_pApp->m_const_params.max_looping_over_recv;
 						while (( 0 != m_recived) && (!g_b_exit))
@@ -271,6 +313,7 @@ int Server<IoType, SwitchActivityInfo, SwitchCalcGaps>::server_accept(int ifd)
 		tmp->recv.cur_size = tmp->recv.max_size;
 
 		active_ifd = (int)accept(ifd, (struct sockaddr *)&addr, (socklen_t*)&addr_size); // TODO: use SOCKET all over the way and avoid this cast
+
         if (active_ifd < 0)
         {
         	active_ifd = (int)INVALID_SOCKET; // TODO: use SOCKET all over the way and avoid this cast
@@ -384,6 +427,13 @@ void server_handler(handler_info *p_info)
 		case EPOLL:
 		{
 			server_handler<IoEpoll>(p_info->fd_min, p_info->fd_max, p_info->fd_num);
+			break;
+		}
+#endif
+#ifdef  USING_VMA_EXTRA_API
+		case VMAPOLL:
+		{
+			server_handler<IoVmaPoll>(p_info->fd_min, p_info->fd_max, p_info->fd_num);
 			break;
 		}
 #endif

@@ -291,4 +291,42 @@ int IoEpoll::prepareNetwork()
 	return rc;
 }
 #endif
+#ifdef  USING_VMA_EXTRA_API
+//==============================================================================
+//------------------------------------------------------------------------------
+IoVmaPoll::IoVmaPoll(int _fd_min, int _fd_max, int _fd_num) : IoHandler(_fd_min, _fd_max,_fd_num, _fd_min, _fd_num){
+
+}
+
+//------------------------------------------------------------------------------
+IoVmaPoll::~IoVmaPoll() {
+}
+
+//------------------------------------------------------------------------------
+int IoVmaPoll::prepareNetwork()
+{
+	int rc = SOCKPERF_ERR_NONE;
+	int list_count = 0;
+
+	printf("\n");
+	for (int ifd = m_fd_min; ifd <= m_fd_max; ifd++) {
+		if (g_fds_array[ifd]) {
+			printf("[%2d] IP = %-15s PORT = %5d # %s\n",
+			       list_count++,
+			       inet_ntoa(g_fds_array[ifd]->server_addr.sin_addr),
+			       ntohs(g_fds_array[ifd]->server_addr.sin_port),
+			       PRINT_PROTOCOL(g_fds_array[ifd]->sock_type));
+			for (int i=0; i< g_fds_array[ifd]->memberships_size; i++){
+				printf("[%2d] IP = %-15s PORT = %5d # %s\n",
+				       list_count++,
+				       inet_ntoa(g_fds_array[ifd]->memberships_addr[i].sin_addr),
+				       ntohs(g_fds_array[ifd]->server_addr.sin_port),
+				       PRINT_PROTOCOL(g_fds_array[ifd]->sock_type));
+			}
+		}
+	}
+	
+	return rc;
+}
+#endif
 #endif

@@ -96,7 +96,7 @@ typedef uint16_t in_port_t;
 
 #if ! defined (WIN32) && ! defined (__FreeBSD__)
 	#include "vma-redirect.h"
-	//#define USING_VMA_EXTRA_API
+	#define USING_VMA_EXTRA_API
 	#ifdef  USING_VMA_EXTRA_API
 	#include <mellanox/vma_extra.h>
 	#endif
@@ -162,11 +162,12 @@ enum {
 	OPT_PREWARMUPWAIT,              //11
 	OPT_VMARXFILTERCB,              //12
 	OPT_VMAZCOPYREAD,               //13
-	OPT_MC_LOOPBACK_ENABLE,         //14
-	OPT_CLIENT_WORK_WITH_SRV_NUM,   //15
-	OPT_FORCE_UC_REPLY,             //16
-	OPT_MPS,                        //17
-	OPT_REPLY_EVERY,                //18
+	OPT_VMAPOLL,			//14
+	OPT_MC_LOOPBACK_ENABLE,         //15
+	OPT_CLIENT_WORK_WITH_SRV_NUM,   //16
+	OPT_FORCE_UC_REPLY,             //17
+	OPT_MPS,                        //18
+	OPT_REPLY_EVERY,                //19
 	OPT_NO_RDTSC,                   //20
 	OPT_SENDER_AFFINITY,            //21
 	OPT_RECEIVER_AFFINITY,          //22
@@ -381,6 +382,10 @@ extern unsigned char* g_pkt_buf;
 extern struct vma_packets_t* g_pkts;
 extern unsigned int g_pkt_index;
 extern unsigned int g_pkt_offset;
+extern int g_ring_fd;
+extern int g_vma_buf_offset;
+extern struct vma_buff_t* g_vma_poll_buff;
+extern struct vma_completion_t g_vma_comps;
 #endif
 
 class Message;
@@ -402,6 +407,18 @@ typedef struct port_and_type{
 	int sock_type;				/**< SOCK_STREAM (tcp), SOCK_DGRAM (udp), SOCK_RAW (ip) */
     in_port_t port;
 }port_type;
+
+/**
+ * @struct rings_fds
+ * @brief socket rings fds
+ */
+
+#ifdef  USING_VMA_EXTRA_API
+typedef struct rings_fds {
+	int fd;                          /**< socket ring fd */
+	rings_fds *next;
+} rings_fds;
+#endif
 
 /**
  * @struct fds_data
@@ -528,6 +545,7 @@ extern fds_data** g_fds_array;
 extern int IGMP_MAX_MEMBERSHIPS;
 
 #ifdef  USING_VMA_EXTRA_API
+extern rings_fds* g_rings_fds_list;
 extern struct vma_api_t *g_vma_api;
 #endif
 
@@ -544,6 +562,9 @@ typedef enum { // must be coordinated with s_fds_handle_desc in common.cpp
 #ifndef WIN32
 	POLL,
 	EPOLL,
+#ifdef  USING_VMA_EXTRA_API
+	VMAPOLL,
+#endif
 #endif
 	FD_HANDLE_MAX
 } fd_block_handler_t;
@@ -573,6 +594,7 @@ struct user_params_t {
 	unsigned int pre_warmup_wait;
 	bool is_vmarxfiltercb;
 	bool is_vmazcopyread;
+	bool is_vmapoll;
 	TicksDuration cycleDuration;
 	bool mc_loop_disable;
 	int client_work_with_srv_num;

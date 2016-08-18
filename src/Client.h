@@ -140,11 +140,26 @@ private:
 		int serverNo = 0;
 
 		TicksTime rxTime;
-
+#ifdef  USING_VMA_EXTRA_API
+		if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+			if (g_vma_poll_buff) {
+				if (g_fds_array[ifd]->recv.cur_offset) {
+					g_fds_array[ifd]->recv.cur_addr = g_fds_array[ifd]->recv.buf;
+					memcpy(g_fds_array[ifd]->recv.cur_addr + g_fds_array[ifd]->recv.cur_offset,(uint8_t*)g_vma_poll_buff->payload, g_vma_poll_buff->len);
+				}
+				else {
+					g_fds_array[ifd]->recv.cur_addr = (uint8_t*)g_vma_poll_buff->payload;
+				}
+				ret = g_vma_poll_buff->len;
+				recvfrom_addr = g_vma_comps.src;
+			}
+		}
+#else
 		ret = msg_recvfrom(ifd,
-				           g_fds_array[ifd]->recv.cur_addr + g_fds_array[ifd]->recv.cur_offset,
-				           g_fds_array[ifd]->recv.cur_size,
-				           &recvfrom_addr);
+				   g_fds_array[ifd]->recv.cur_addr + g_fds_array[ifd]->recv.cur_offset,
+				   g_fds_array[ifd]->recv.cur_size,
+				   &recvfrom_addr);
+#endif 
 		if (ret == RET_SOCKET_SHUTDOWN) {
 			if (g_fds_array[ifd]->sock_type == SOCK_STREAM) {
 				exit_with_log("A connection was forcibly closed by a peer",SOCKPERF_ERR_SOCKET,g_fds_array[ifd]);
@@ -166,6 +181,13 @@ private:
 				if (g_fds_array[ifd]->recv.cur_size < MsgHeader::EFFECTIVE_SIZE) {
 					g_fds_array[ifd]->recv.cur_size = MsgHeader::EFFECTIVE_SIZE - g_fds_array[ifd]->recv.cur_offset;
 				}
+#ifdef  USING_VMA_EXTRA_API
+				if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+					if (g_vma_poll_buff) {
+						memcpy(g_fds_array[ifd]->recv.buf,g_fds_array[ifd]->recv.cur_addr, g_fds_array[ifd]->recv.cur_offset);
+					}
+				}
+#endif
 				return (receiveCount);
 			} else if (g_fds_array[ifd]->recv.cur_offset < MsgHeader::EFFECTIVE_SIZE) {
 			  /* 2: message header is got, match message to cycle buffer */
@@ -196,6 +218,13 @@ private:
 				if (g_fds_array[ifd]->recv.cur_size < (int)m_pMsgReply->getMaxSize()) {
 					g_fds_array[ifd]->recv.cur_size = m_pMsgReply->getLength() - g_fds_array[ifd]->recv.cur_offset;
 				}
+#ifdef  USING_VMA_EXTRA_API
+				if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+					if (g_vma_poll_buff) {
+						memcpy(g_fds_array[ifd]->recv.buf,g_fds_array[ifd]->recv.cur_addr, g_fds_array[ifd]->recv.cur_offset);
+					}
+				}
+#endif
 				return (receiveCount);
 			}
 
@@ -268,7 +297,7 @@ private:
 	inline unsigned int client_receive(/*int packet_cnt_index*/)
 	{
 		int numReady = 0;
-
+		
 		do {
 			// wait for arrival
 			numReady = m_ioHandler.waitArrival();
@@ -318,6 +347,11 @@ private:
 		//send
 		for (unsigned i = 0; i < g_pApp->m_const_params.burst_size && !g_b_exit; i++) {
 			client_send_packet(ifd);
+#ifdef  USING_VMA_EXTRA_API
+			if (g_pApp->m_const_params.is_vmapoll && g_vma_api){
+				m_ioHandler.waitArrival();
+			}
+#endif
 		}
 
 		m_switchActivityInfo.execute(m_pMsgRequest->getSequenceCounter());

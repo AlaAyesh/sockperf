@@ -46,6 +46,10 @@ unsigned char* g_pkt_buf = NULL;
 struct vma_packets_t* g_pkts = NULL;
 unsigned int g_pkt_index = 0;
 unsigned int g_pkt_offset = 0;
+int g_ring_fd = 0;
+int g_vma_buf_offset = 0;
+struct vma_buff_t* g_vma_poll_buff = NULL;
+struct vma_completion_t g_vma_comps;
 #endif
 
 
@@ -61,6 +65,7 @@ int IGMP_MAX_MEMBERSHIPS = IP_MAX_MEMBERSHIPS;
 
 #ifdef  USING_VMA_EXTRA_API
 struct vma_api_t *g_vma_api;
+rings_fds* g_rings_fds_list = NULL;
 #endif
 
 const App* g_pApp = NULL;
